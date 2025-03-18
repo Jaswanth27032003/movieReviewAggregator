@@ -1,5 +1,5 @@
 const Review = require('../models/Review');
-const User = require('../models/User');
+const User = require('../models/user');
 
 // Get all reviews for a movie
 exports.getMovieReviews = async (req, res) => {

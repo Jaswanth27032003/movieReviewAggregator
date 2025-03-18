@@ -4,7 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 
-const user = require('./models/ser');
+const user = require('./models/User');
 // Load environment variables
 dotenv.config();
 
