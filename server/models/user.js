@@ -42,4 +42,4 @@ userSchema.pre('save', function (next) {
 // Export the model, reusing it if it already exists
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 
-module.exports = User;
+module.exports = user;
