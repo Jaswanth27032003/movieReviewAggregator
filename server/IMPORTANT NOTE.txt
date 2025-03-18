@@ -1,0 +1,10 @@
+Install node modules
+using terminal:
+cd server
+npm install
+then you are good to go
+
+
+to run server:
+cd server
+npm start

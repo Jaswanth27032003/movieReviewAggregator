@@ -1,0 +1,9 @@
+Install Node Modules
+using Terminal:
+cd client
+npm install
+
+
+to run client:
+cd client
+npm start
