@@ -4,7 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 
-const user = require('./models/User'); // Updated to lowercase 'user'
+const user = require('./models/User'); // Changed to lowercase 'user' to match file name
 // Load environment variables
 dotenv.config();
 
