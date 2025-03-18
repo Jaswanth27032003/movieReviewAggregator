@@ -1,100 +1,110 @@
 const express = require('express');
-const router = express.Router();
-const { auth } = require('../middleware/auth'); // Import the auth middleware
+const mongoose = require('mongoose');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const path = require('path');
 
-// POST /api/watchlist - Add item to watchlist
-router.post('/', auth, async (req, res) => {
+const user = require('./models/user'); // Updated to lowercase 'user'
+// Load environment variables
+dotenv.config();
+
+// Clear Mongoose model cache to prevent redefinition during hot-reloading
+mongoose.models = {};
+mongoose.modelSchemas = {};
+
+// Initialize Express app
+const app = express();
+
+// Middleware
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+}));
+app.use(express.json());
+
+// Import routes
+const authRoutes = require('./routes/auth');
+const movieRoutes = require('./routes/movies');
+const reviewRoutes = require('./routes/reviews');
+const watchlistRoutes = require('./routes/watchlist');
+
+// Use routes
+app.use('/api/auth', authRoutes);
+app.use('/api/movies', movieRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/watchlist', watchlistRoutes);
+
+// Default route
+app.get('/', (req, res) => {
+    res.send('Movie Review Aggregator API is running');
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Server error:', {
+        message: err.message,
+        stack: err.stack,
+        path: req.path,
+        method: req.method,
+    });
+    res.status(500).json({ message: 'Something went wrong!', error: err.message });
+});
+
+// Connect to MongoDB
+const connectDB = async () => {
     try {
-        const { mediaId, mediaType, title, poster_path } = req.body;
-        const userId = req.user.userId; // Guaranteed to exist due to auth middleware
+        await mongoose.connect(process.env.MONGO_URI); // Removed deprecated options
+        console.log('MongoDB connected successfully');
+    } catch (error) {
+        console.error('MongoDB connection error:', {
+            message: error.message,
+            stack: error.stack,
+        });
+        process.exit(1);
+    }
+};
 
-        // Validate required fields
-        if (!mediaId || !mediaType) {
-            return res.status(400).json({ message: 'mediaId and mediaType are required' });
-        }
+// Set port
+const PORT = process.env.PORT || 8000;
 
-        // Validate mediaType
-        if (!['movie', 'tv'].includes(mediaType)) {
-            return res.status(400).json({ message: 'mediaType must be either "movie" or "tv"' });
-        }
-
-        // Validate mediaId is a positive number
-        if (!Number.isInteger(mediaId) || mediaId <= 0) {
-            return res.status(400).json({ message: 'mediaId must be a positive integer' });
-        }
-
-        // Check if the item already exists in the watchlist
-        const existingItem = await Watchlist.findOne({ userId, mediaId, mediaType });
-        if (existingItem) {
-            return res.status(400).json({ message: 'Item already in watchlist' });
-        }
-
-        // Create new watchlist item
-        const newWatchlistItem = new Watchlist({
-            userId,
-            mediaId,
-            mediaType,
-            title,
-            poster_path,
+// Start server only after DB connection
+const startServer = async () => {
+    try {
+        await connectDB();
+        const server = app.listen(PORT, () => {
+            console.log(`Server running on port ${PORT}`);
         });
 
-        await newWatchlistItem.save();
-        res.status(201).json({ success: true, message: 'Added to watchlist', data: newWatchlistItem });
-    } catch (error) {
-        console.error('Error adding to watchlist:', error);
-        if (error.code === 11000) {
-            return res.status(400).json({ message: 'Item already in watchlist' });
-        }
-        res.status(500).json({ message: 'Server error while adding to watchlist', error: error.message });
-    }
-});
-
-// GET /api/watchlist - Retrieve user's watchlist
-router.get('/', auth, async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const watchlistItems = await Watchlist.find({ userId }).sort({ createdAt: -1 });
-        res.status(200).json({ success: true, data: watchlistItems });
-    } catch (error) {
-        console.error('Error retrieving watchlist:', error);
-        res.status(500).json({ message: 'Server error while retrieving watchlist', error: error.message });
-    }
-});
-
-// DELETE /api/watchlist/:mediaId - Remove item from watchlist
-router.delete('/:mediaId', auth, async (req, res) => {
-    try {
-        const { mediaId } = req.params;
-        const { mediaType } = req.query; // mediaType passed as query parameter
-        const userId = req.user.userId;
-
-        // Validate mediaId
-        const parsedMediaId = parseInt(mediaId, 10);
-        if (isNaN(parsedMediaId) || parsedMediaId <= 0) {
-            return res.status(400).json({ message: 'mediaId must be a positive integer' });
-        }
-
-        // Validate mediaType
-        if (!mediaType || !['movie', 'tv'].includes(mediaType)) {
-            return res.status(400).json({ message: 'mediaType must be either "movie" or "tv" and is required' });
-        }
-
-        // Find and delete the watchlist item
-        const deletedItem = await Watchlist.findOneAndDelete({
-            userId,
-            mediaId: parsedMediaId,
-            mediaType,
+        // Graceful shutdown
+        process.on('SIGTERM', () => {
+            console.log('SIGTERM received. Closing server...');
+            server.close(async () => {
+                console.log('Server closed. Disconnecting from MongoDB...');
+                await mongoose.connection.close();
+                console.log('MongoDB connection closed.');
+                process.exit(0);
+            });
         });
 
-        if (!deletedItem) {
-            return res.status(404).json({ message: 'Item not found in watchlist' });
-        }
-
-        res.status(200).json({ success: true, message: 'Item removed from watchlist', data: deletedItem });
+        process.on('SIGINT', () => {
+            console.log('SIGINT received. Closing server...');
+            server.close(async () => {
+                console.log('Server closed. Disconnecting from MongoDB...');
+                await mongoose.connection.close();
+                console.log('MongoDB connection closed.');
+                process.exit(0);
+            });
+        });
     } catch (error) {
-        console.error('Error removing from watchlist:', error);
-        res.status(500).json({ message: 'Server error while removing from watchlist', error: error.message });
+        console.error('Failed to start server:', {
+            message: error.message,
+            stack: error.stack,
+        });
+        process.exit(1);
     }
-});
+};
 
-module.exports = router;
+// Start the server
+startServer();
