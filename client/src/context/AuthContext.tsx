@@ -19,11 +19,13 @@ const initialState: AuthState = {
     isAuthenticated: !!localStorage.getItem('token'),
     user: (() => {
         const userData = localStorage.getItem('user');
+        console.log('userData from localStorage:', userData); // Debug log
         if (userData && userData !== 'undefined') {
             try {
                 return JSON.parse(userData);
             } catch (error) {
                 console.error('Failed to parse user data from localStorage:', error);
+                localStorage.removeItem('user'); // Clear invalid data
                 return null;
             }
         }
@@ -31,7 +33,7 @@ const initialState: AuthState = {
     })(),
     loading: true,
     error: null,
-    authToken: localStorage.getItem('token'), // Initialize authToken from localStorage
+    authToken: localStorage.getItem('token'),
 };
 // Create context
 interface AuthContextType {
