@@ -2,6 +2,8 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import axios from 'axios';
 import { User, AuthState } from '../types';
 
+const url = "https://moviereviewaggregator.onrender.com";
+
 // Define action types
 type AuthAction =
     | { type: 'LOGIN_SUCCESS'; payload: { token: string; user: User } }
