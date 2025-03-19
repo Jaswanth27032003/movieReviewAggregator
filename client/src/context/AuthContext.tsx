@@ -17,12 +17,22 @@ type AuthAction =
 // Initial state
 const initialState: AuthState = {
     isAuthenticated: !!localStorage.getItem('token'),
-    user: JSON.parse(localStorage.getItem('user') || 'null'),
+    user: (() => {
+        const userData = localStorage.getItem('user');
+        if (userData && userData !== 'undefined') {
+            try {
+                return JSON.parse(userData);
+            } catch (error) {
+                console.error('Failed to parse user data from localStorage:', error);
+                return null;
+            }
+        }
+        return null;
+    })(),
     loading: true,
     error: null,
     authToken: localStorage.getItem('token'), // Initialize authToken from localStorage
 };
-
 // Create context
 interface AuthContextType {
     state: AuthState;
