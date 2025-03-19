@@ -20,8 +20,8 @@ const app = express();
 const corsOptions = {
     origin: function (origin, callback) {
         const allowedOrigins = [
-            'http://localhost:3000', // Existing local dev origin
-            'http://localhost:5000', // New local dev origin
+            'https://moviereviewaggregator-1.onrender.com', // Existing local dev origin
+            'https://moviereviewaggregator.onrender.com', // New local dev origin
             'https://movie-review-aggregator.vercel.app/', // Deployed frontend
             process.env.FRONTEND_URL || '', // Environment variable for flexibility
         ].filter(Boolean);
