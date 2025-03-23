@@ -3,7 +3,7 @@ import axios from 'axios';
 import { User, AuthState } from '../types';
 
 // Define the backend URL using an environment variable
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000'; // Fallback to localhost for development
+const API_URL = process.env.REACT_APP_API_URL || 'https://moviereviewaggregator.onrender.com'; // Fallback to localhost for development
 
 // Define action types
 type AuthAction =
