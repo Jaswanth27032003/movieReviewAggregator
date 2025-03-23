@@ -1,5 +1,5 @@
 // API configuration
-export const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+export const API_URL = process.env.REACT_APP_API_URL || 'https://moviereviewaggregator.onrender.com/api';
 
 // Image configuration for TMDB API
 export const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/';
