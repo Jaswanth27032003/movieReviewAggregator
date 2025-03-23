@@ -3,7 +3,7 @@ import axios from 'axios';
 import { User, AuthState } from '../types';
 
 // Define the backend URL using an environment variable
-const API_URL = process.env.REACT_APP_API_URL || 'https://moviereviewaggregator.onrender.com'; // Fallback to localhost for development
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000'; // Fallback to localhost for development
 
 // Define action types
 type AuthAction =
@@ -17,14 +17,13 @@ type AuthAction =
 
 // Initial state
 const initialState: AuthState = {
-    isAuthenticated: !!localStorage.getItem('token'),
+    isAuthenticated: false, // Default to false until validated
     user: (() => {
         const userData = localStorage.getItem('user');
         console.log('userData from localStorage:', userData);
         if (userData && userData !== 'undefined' && userData !== '"undefined"') {
             try {
                 const parsedUser = JSON.parse(userData);
-                // Ensure parsedUser is a valid User object
                 if (parsedUser && typeof parsedUser === 'object' && 'id' in parsedUser) {
                     return parsedUser as User;
                 }
@@ -43,7 +42,15 @@ const initialState: AuthState = {
     })(),
     loading: true,
     error: null,
-    authToken: localStorage.getItem('token') || null,
+    authToken: (() => {
+        const token = localStorage.getItem('token');
+        if (token && token !== 'undefined' && token !== '"undefined"') {
+            return token;
+        }
+        console.log('No valid token found in localStorage, clearing token key');
+        localStorage.removeItem('token');
+        return null;
+    })(),
 };
 
 // Create context
@@ -82,15 +89,27 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
             };
         case 'LOGIN_SUCCESS':
         case 'REGISTER_SUCCESS':
-            localStorage.setItem('token', action.payload.token);
-            if (action.payload.user && typeof action.payload.user === 'object' && 'id' in action.payload.user) {
-                localStorage.setItem('user', JSON.stringify(action.payload.user));
-                console.log('User data saved to localStorage:', action.payload.user);
-            } else {
-                localStorage.removeItem('user');
-                console.warn('User data is invalid or undefined during LOGIN_SUCCESS/REGISTER_SUCCESS:', action.payload.user);
+            // Validate token and user before storing
+            if (!action.payload.token || typeof action.payload.token !== 'string') {
+                console.error('Invalid token in LOGIN_SUCCESS/REGISTER_SUCCESS:', action.payload.token);
+                return {
+                    ...state,
+                    loading: false,
+                    error: 'Invalid token received from server',
+                };
             }
+            if (!action.payload.user || typeof action.payload.user !== 'object' || !('id' in action.payload.user)) {
+                console.error('Invalid user data in LOGIN_SUCCESS/REGISTER_SUCCESS:', action.payload.user);
+                return {
+                    ...state,
+                    loading: false,
+                    error: 'Invalid user data received from server',
+                };
+            }
+            localStorage.setItem('token', action.payload.token);
+            localStorage.setItem('user', JSON.stringify(action.payload.user));
             console.log('Token saved to localStorage:', action.payload.token);
+            console.log('User data saved to localStorage:', action.payload.user);
             return {
                 ...state,
                 isAuthenticated: true,
@@ -130,10 +149,10 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
 // Provider component
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [state, dispatch] = useReducer(authReducer, initialState);
-    const [currentToken, setCurrentToken] = useState<string | null>(localStorage.getItem('token'));
+    const [currentToken, setCurrentToken] = useState<string | null>(localStorage.getItem('token') || null);
 
     const setAuthToken = (token: string | null) => {
-        if (token) {
+        if (token && typeof token === 'string') {
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
             console.log('Set axios default Authorization header:', `Bearer ${token}`);
             setCurrentToken(token);
@@ -158,7 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const user = localStorage.getItem('user');
         console.log('Loading user with token from localStorage:', token);
 
-        if (token && user && user !== 'undefined' && user !== '"undefined"') {
+        if (token && user && token !== 'undefined' && token !== '"undefined"' && user !== 'undefined' && user !== '"undefined"') {
             try {
                 const parsedUser = JSON.parse(user);
                 if (!parsedUser || typeof parsedUser !== 'object' || !('id' in parsedUser)) {
@@ -199,8 +218,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             dispatch({ type: 'LOADING' });
             const res = await axios.post(`${API_URL}/api/auth/login`, { email: email.toLowerCase(), password });
             console.log('Login response received:', res.data);
-            if (!res.data.token || !res.data.user) {
+            if (!res.data || !res.data.token || !res.data.user) {
                 throw new Error('Invalid login response: token or user missing');
+            }
+            if (typeof res.data.token !== 'string') {
+                throw new Error('Invalid token format in login response');
+            }
+            if (typeof res.data.user !== 'object' || !('id' in res.data.user)) {
+                throw new Error('Invalid user format in login response');
             }
             dispatch({ type: 'LOGIN_SUCCESS', payload: res.data });
             setAuthToken(res.data.token);
@@ -226,8 +251,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 password,
             });
             console.log('Register response:', res.data);
-            if (!res.data.token || !res.data.user) {
+            if (!res.data || !res.data.token || !res.data.user) {
                 throw new Error('Invalid register response: token or user missing');
+            }
+            if (typeof res.data.token !== 'string') {
+                throw new Error('Invalid token format in register response');
+            }
+            if (typeof res.data.user !== 'object' || !('id' in res.data.user)) {
+                throw new Error('Invalid user format in register response');
             }
             dispatch({ type: 'REGISTER_SUCCESS', payload: res.data });
             setAuthToken(res.data.token);
