@@ -2,7 +2,8 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import axios from 'axios';
 import { User, AuthState } from '../types';
 
-const url = "https://moviereviewaggregator.onrender.com";
+// Define the backend URL for deployed environment on Render
+const API_URL = "https://moviereviewaggregator.onrender.com";
 
 // Define action types
 type AuthAction =
@@ -35,6 +36,7 @@ const initialState: AuthState = {
     error: null,
     authToken: localStorage.getItem('token'),
 };
+
 // Create context
 interface AuthContextType {
     state: AuthState;
@@ -142,13 +144,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const user = localStorage.getItem('user');
         console.log('Loading user with token from localStorage:', token);
 
-        if (token && user) {
+        // Check if token and user exist and user is not "undefined"
+        if (token && user && user !== "undefined") {
             try {
+                const parsedUser = JSON.parse(user); // Parse user data safely
                 setAuthToken(token); // Set the token for axios
-                const res = await axios.get('/api/auth/validate', {
+                // Use full backend URL instead of relative path
+                const res = await axios.get(`${API_URL}/api/auth/validate`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-                dispatch({ type: 'USER_LOADED', payload: JSON.parse(user) }); // Use stored user data
+                dispatch({ type: 'USER_LOADED', payload: parsedUser }); // Use stored user data
                 console.log('Token validated, user loaded:', res.data);
             } catch (err: any) {
                 console.error('Token validation failed:', {
@@ -162,7 +167,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 dispatch({ type: 'AUTH_ERROR', payload: 'Invalid or expired token. Please log in again.' });
             }
         } else {
-            dispatch({ type: 'AUTH_ERROR', payload: 'No token found in localStorage. Please log in.' });
+            console.log('No valid token or user data found in localStorage');
+            dispatch({ type: 'AUTH_ERROR', payload: 'No valid token or user data found. Please log in.' });
         }
     }, []); // Empty dependency array to run only on mount
 
@@ -174,7 +180,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             console.log('Attempting login with:', { email: email.toLowerCase(), password });
             dispatch({ type: 'LOADING' });
-            const res = await axios.post('/api/auth/login', { email: email.toLowerCase(), password });
+            // Use full backend URL instead of relative path
+            const res = await axios.post(`${API_URL}/api/auth/login`, { email: email.toLowerCase(), password });
             console.log('Login response received:', res.data); // Log full response
             if (!res.data.token || !res.data.user) {
                 throw new Error('Invalid login response: token or user missing');
@@ -197,7 +204,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const register = async (username: string, email: string, password: string) => {
         try {
             dispatch({ type: 'LOADING' });
-            const res = await axios.post('/api/auth/register', {
+            // Use full backend URL instead of relative path
+            const res = await axios.post(`${API_URL}/api/auth/register`, {
                 username,
                 email: email.toLowerCase(),
                 password,
@@ -229,7 +237,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updateProfile = async (userData: Partial<User>) => {
         try {
             dispatch({ type: 'LOADING' });
-            const res = await axios.put('/api/users/profile', userData, {
+            // Use full backend URL instead of relative path
+            const res = await axios.put(`${API_URL}/api/users/profile`, userData, {
                 headers: { Authorization: `Bearer ${state.authToken}` },
             });
             dispatch({ type: 'USER_LOADED', payload: res.data });
