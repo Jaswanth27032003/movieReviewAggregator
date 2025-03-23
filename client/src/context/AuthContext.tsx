@@ -2,8 +2,8 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import axios from 'axios';
 import { User, AuthState } from '../types';
 
-// Define the backend URL for deployed environment on Render
-const API_URL = "https://moviereviewaggregator.onrender.com";
+// Define the backend URL using an environment variable
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000'; // Fallback to localhost for development
 
 // Define action types
 type AuthAction =
@@ -20,21 +20,30 @@ const initialState: AuthState = {
     isAuthenticated: !!localStorage.getItem('token'),
     user: (() => {
         const userData = localStorage.getItem('user');
-        console.log('userData from localStorage:', userData); // Debug log
-        if (userData && userData !== 'undefined') {
+        console.log('userData from localStorage:', userData);
+        if (userData && userData !== 'undefined' && userData !== '"undefined"') {
             try {
-                return JSON.parse(userData);
+                const parsedUser = JSON.parse(userData);
+                // Ensure parsedUser is a valid User object
+                if (parsedUser && typeof parsedUser === 'object' && 'id' in parsedUser) {
+                    return parsedUser as User;
+                }
+                console.warn('Parsed user data is not a valid User object:', parsedUser);
+                localStorage.removeItem('user');
+                return null;
             } catch (error) {
                 console.error('Failed to parse user data from localStorage:', error);
-                localStorage.removeItem('user'); // Clear invalid data
+                localStorage.removeItem('user');
                 return null;
             }
         }
+        console.log('No valid user data found in localStorage, clearing user key');
+        localStorage.removeItem('user');
         return null;
     })(),
     loading: true,
     error: null,
-    authToken: localStorage.getItem('token'),
+    authToken: localStorage.getItem('token') || null,
 };
 
 // Create context
@@ -69,12 +78,18 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
                 isAuthenticated: true,
                 user: action.payload,
                 loading: false,
-                authToken: localStorage.getItem('token') || state.authToken, // Sync with localStorage
+                authToken: localStorage.getItem('token') || state.authToken,
             };
         case 'LOGIN_SUCCESS':
         case 'REGISTER_SUCCESS':
             localStorage.setItem('token', action.payload.token);
-            localStorage.setItem('user', JSON.stringify(action.payload.user));
+            if (action.payload.user && typeof action.payload.user === 'object' && 'id' in action.payload.user) {
+                localStorage.setItem('user', JSON.stringify(action.payload.user));
+                console.log('User data saved to localStorage:', action.payload.user);
+            } else {
+                localStorage.removeItem('user');
+                console.warn('User data is invalid or undefined during LOGIN_SUCCESS/REGISTER_SUCCESS:', action.payload.user);
+            }
             console.log('Token saved to localStorage:', action.payload.token);
             return {
                 ...state,
@@ -82,20 +97,20 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
                 user: action.payload.user,
                 loading: false,
                 error: null,
-                authToken: action.payload.token, // Update authToken in state
+                authToken: action.payload.token,
             };
         case 'LOGOUT':
         case 'AUTH_ERROR':
             localStorage.removeItem('token');
             localStorage.removeItem('user');
-            console.log('Token removed from localStorage');
+            console.log('Token and user data removed from localStorage');
             return {
                 ...state,
                 isAuthenticated: false,
                 user: null,
                 loading: false,
                 error: action.type === 'AUTH_ERROR' ? action.payload : null,
-                authToken: null, // Clear authToken in state
+                authToken: null,
             };
         case 'LOADING':
             return {
@@ -122,7 +137,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
             console.log('Set axios default Authorization header:', `Bearer ${token}`);
             setCurrentToken(token);
-            // Use a default User object that matches the User type if state.user is null
             const defaultUser: User = {
                 id: '',
                 email: '',
@@ -130,12 +144,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
             };
-            dispatch({ type: 'LOGIN_SUCCESS', payload: { token, user: state.user || defaultUser } }); // Sync state
+            dispatch({ type: 'LOGIN_SUCCESS', payload: { token, user: state.user || defaultUser } });
         } else {
             delete axios.defaults.headers.common['Authorization'];
             console.log('Removed axios default Authorization header');
             setCurrentToken(null);
-            dispatch({ type: 'LOGOUT' }); // Sync state on token removal
+            dispatch({ type: 'LOGOUT' });
         }
     };
 
@@ -144,16 +158,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const user = localStorage.getItem('user');
         console.log('Loading user with token from localStorage:', token);
 
-        // Check if token and user exist and user is not "undefined"
-        if (token && user && user !== "undefined") {
+        if (token && user && user !== 'undefined' && user !== '"undefined"') {
             try {
-                const parsedUser = JSON.parse(user); // Parse user data safely
-                setAuthToken(token); // Set the token for axios
-                // Use full backend URL instead of relative path
+                const parsedUser = JSON.parse(user);
+                if (!parsedUser || typeof parsedUser !== 'object' || !('id' in parsedUser)) {
+                    throw new Error('Invalid user data in localStorage');
+                }
+                setAuthToken(token);
                 const res = await axios.get(`${API_URL}/api/auth/validate`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-                dispatch({ type: 'USER_LOADED', payload: parsedUser }); // Use stored user data
+                dispatch({ type: 'USER_LOADED', payload: parsedUser });
                 console.log('Token validated, user loaded:', res.data);
             } catch (err: any) {
                 console.error('Token validation failed:', {
@@ -168,26 +183,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         } else {
             console.log('No valid token or user data found in localStorage');
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
             dispatch({ type: 'AUTH_ERROR', payload: 'No valid token or user data found. Please log in.' });
         }
-    }, []); // Empty dependency array to run only on mount
+    }, []);
 
     useEffect(() => {
         loadUser();
-    }, [loadUser]); // Run loadUser when it changes (though it’s memoized)
+    }, [loadUser]);
 
     const login = async (email: string, password: string) => {
         try {
             console.log('Attempting login with:', { email: email.toLowerCase(), password });
             dispatch({ type: 'LOADING' });
-            // Use full backend URL instead of relative path
             const res = await axios.post(`${API_URL}/api/auth/login`, { email: email.toLowerCase(), password });
-            console.log('Login response received:', res.data); // Log full response
+            console.log('Login response received:', res.data);
             if (!res.data.token || !res.data.user) {
                 throw new Error('Invalid login response: token or user missing');
             }
             dispatch({ type: 'LOGIN_SUCCESS', payload: res.data });
-            setAuthToken(res.data.token); // Set the token after successful login
+            setAuthToken(res.data.token);
         } catch (err: any) {
             const errorMessage = err.response?.data?.message || err.message || 'Login failed. Please try again.';
             console.error('Login error details:', {
@@ -204,15 +220,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const register = async (username: string, email: string, password: string) => {
         try {
             dispatch({ type: 'LOADING' });
-            // Use full backend URL instead of relative path
             const res = await axios.post(`${API_URL}/api/auth/register`, {
                 username,
                 email: email.toLowerCase(),
                 password,
             });
             console.log('Register response:', res.data);
+            if (!res.data.token || !res.data.user) {
+                throw new Error('Invalid register response: token or user missing');
+            }
             dispatch({ type: 'REGISTER_SUCCESS', payload: res.data });
-            setAuthToken(res.data.token); // Set the token after successful registration
+            setAuthToken(res.data.token);
         } catch (err: any) {
             const errorMessage = err.response?.data?.message || 'Registration failed. Please try again.';
             console.error('Register error:', {
@@ -237,7 +255,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updateProfile = async (userData: Partial<User>) => {
         try {
             dispatch({ type: 'LOADING' });
-            // Use full backend URL instead of relative path
             const res = await axios.put(`${API_URL}/api/users/profile`, userData, {
                 headers: { Authorization: `Bearer ${state.authToken}` },
             });
@@ -259,7 +276,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export const useAuth = () => {
     const context = useContext(AuthContext);
     if (context === defaultContextValue) {
-        throw new Error('useAuth must be used within an AuthProvider. Make sure your component is wrapped with AuthProvider in the component tree.');
+        throw new Error('useAuth must be used within an AuthProvider.');
     }
     return context;
 };
