@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
+import cleanupLocalStorage from './utils/localStorageCleanup';
+
+// Clean up localStorage on app start
+cleanupLocalStorage();
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
