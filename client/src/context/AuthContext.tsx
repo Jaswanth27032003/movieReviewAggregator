@@ -2,7 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback } 
 import axios from 'axios';
 import { User, AuthState } from '../types';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_URL = process.env.REACT_APP_API_URL || 'https://moviereviewaggregator.onrender.com';
 axios.defaults.baseURL = API_URL;
 
 // Define action types
