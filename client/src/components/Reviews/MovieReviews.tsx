@@ -144,6 +144,33 @@ const SentimentBadge = styled(Box)<{ sentiment: string }>(({ theme, sentiment })
     },
 }));
 
+// Safe localStorage helpers
+const safeGetItem = (key: string, defaultValue: string = '[]') => {
+    try {
+        const item = localStorage.getItem(key);
+        if (!item || item === 'undefined' || item === 'null') {
+            return defaultValue;
+        }
+        // Test if it's valid JSON
+        JSON.parse(item);
+        return item;
+    } catch (e) {
+        // Clean up invalid data
+        localStorage.removeItem(key);
+        return defaultValue;
+    }
+};
+
+const safeSetItem = (key: string, value: any) => {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+    } catch (e) {
+        console.error('Error saving to localStorage:', e);
+        return false;
+    }
+};
+
 const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) => {
     const theme = useTheme();
     const { state: authState } = useAuth(); // Get auth state directly
@@ -159,13 +186,7 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
 
     // Use the user ID from auth context (which is always up to date)
     const userId = authState.user?.id || currentUserId;
-
-    // Log authentication state for debugging
-    useEffect(() => {
-        console.log('Auth state in MovieReviews:', authState);
-        console.log('User ID:', userId);
-    }, [authState, userId]);
-
+    
     const colors = {
         primary: '#4682B4',
         secondary: '#FFD700',
@@ -188,26 +209,26 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
         setError(null);
         try {
             // First try to get reviews from localStorage to maintain persistence
-            const savedReviews = JSON.parse(localStorage.getItem(`reviews-${movieId}`) || '[]');
-
+            const savedReviews = JSON.parse(safeGetItem(`reviews-${movieId}`));
+            
             // Then fetch from service
             const response = await reviewService.getMovieReviews(movieId, page, limit);
-
+            
             // Combine saved reviews with fetched reviews, avoiding duplicates
             const combinedReviews = [...savedReviews];
-
+            
             // Add fetched reviews that aren't already in savedReviews
             response.reviews.forEach((fetchedReview) => {
                 if (!combinedReviews.some(r => r._id === fetchedReview._id)) {
                     combinedReviews.push(fetchedReview);
                 }
             });
-
+            
             // Sort by date, newest first
-            combinedReviews.sort((a, b) =>
+            combinedReviews.sort((a, b) => 
                 new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
             );
-
+            
             setReviews((prev) => (page === 1 ? combinedReviews : [...prev, ...combinedReviews]));
             setTotalReviews(combinedReviews.length);
         } catch (err: any) {
@@ -218,7 +239,8 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
     };
 
     useEffect(() => {
-        const newSocket = io('http://localhost:5000', {
+        const socketUrl = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
+        const newSocket = io(socketUrl, {
             withCredentials: true,
         });
         setSocket(newSocket);
@@ -284,7 +306,7 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
             setError('You must be logged in to submit a review.');
             return;
         }
-
+        
         const reviewData = editReview || newReview;
         if (reviewData.rating < 1 || reviewData.rating > 5 || !reviewData.content.trim()) {
             setError('Please provide a rating (1-5) and a review comment.');
@@ -300,7 +322,7 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
                     rating: reviewData.rating,
                     content: reviewData.content,
                 });
-
+                
                 // Override with real user data since we're using mock data
                 const enhancedReview = {
                     ...updatedReview,
@@ -316,25 +338,25 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
                     updatedAt: new Date().toISOString(),
                     likes: editReview.likes || []
                 };
-
+                
                 // Update the review in localStorage
-                const savedReviews = JSON.parse(localStorage.getItem(`reviews-${movieId}`) || '[]');
-                const updatedSavedReviews = savedReviews.map((r: Review) =>
+                const savedReviews = JSON.parse(safeGetItem(`reviews-${movieId}`));
+                const updatedSavedReviews = savedReviews.map((r: Review) => 
                     r._id === enhancedReview._id ? enhancedReview : r
                 );
-                localStorage.setItem(`reviews-${movieId}`, JSON.stringify(updatedSavedReviews));
-
+                safeSetItem(`reviews-${movieId}`, updatedSavedReviews);
+                
                 setReviews((prev) =>
                     prev.map((r) => (r._id === enhancedReview._id ? enhancedReview : r))
                 );
-
+                
                 if (socket) {
                     socket.emit('reviewUpdated', enhancedReview);
                 }
                 setEditReview(null);
             } else {
                 const createdReview = await reviewService.createReview(movieId, reviewData);
-
+                
                 // Override with real user data since we're using mock data
                 const enhancedReview = {
                     ...createdReview,
@@ -351,14 +373,14 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
                     updatedAt: new Date().toISOString(),
                     likes: []
                 };
-
+                
                 // Save to localStorage to persist the reviews
-                const savedReviews = JSON.parse(localStorage.getItem(`reviews-${movieId}`) || '[]');
-                localStorage.setItem(`reviews-${movieId}`, JSON.stringify([enhancedReview, ...savedReviews]));
-
+                const savedReviews = JSON.parse(safeGetItem(`reviews-${movieId}`));
+                safeSetItem(`reviews-${movieId}`, [enhancedReview, ...savedReviews]);
+                
                 setReviews((prev) => [enhancedReview, ...prev]);
                 setTotalReviews((prev) => prev + 1);
-
+                
                 if (socket) {
                     socket.emit('reviewAdded', movieId, enhancedReview);
                 }
@@ -376,7 +398,7 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
             setError('You must be logged in to like reviews.');
             return;
         }
-
+        
         try {
             // Instead of using the service which uses mock data, we'll handle likes directly
             setReviews((prev) => {
@@ -384,7 +406,7 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
                     if (review._id === reviewId) {
                         const likes = [...(review.likes || [])];
                         const userIndex = likes.indexOf(userId);
-
+                        
                         if (userIndex === -1) {
                             // Add like
                             likes.push(userId);
@@ -392,15 +414,15 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
                             // Remove like
                             likes.splice(userIndex, 1);
                         }
-
+                        
                         // Save updated reviews to localStorage
-                        const savedReviews = JSON.parse(localStorage.getItem(`reviews-${movieId}`) || '[]');
-                        const updatedSavedReviews = savedReviews.map((r: Review) =>
-                            r._id === reviewId ? { ...r, likes } : r
+                        const savedReviews = JSON.parse(safeGetItem(`reviews-${movieId}`));
+                        const updatedSavedReviews = savedReviews.map((r: Review) => 
+                            r._id === reviewId ? {...r, likes} : r
                         );
-                        localStorage.setItem(`reviews-${movieId}`, JSON.stringify(updatedSavedReviews));
-
-                        return { ...review, likes };
+                        safeSetItem(`reviews-${movieId}`, updatedSavedReviews);
+                        
+                        return {...review, likes};
                     }
                     return review;
                 });
@@ -418,15 +440,15 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
     const handleDelete = async (reviewId: string) => {
         try {
             await reviewService.deleteReview(reviewId);
-
+            
             // Remove the review from localStorage to ensure it stays deleted after refresh
-            const savedReviews = JSON.parse(localStorage.getItem(`reviews-${movieId}`) || '[]');
+            const savedReviews = JSON.parse(safeGetItem(`reviews-${movieId}`));
             const updatedSavedReviews = savedReviews.filter((r: Review) => r._id !== reviewId);
-            localStorage.setItem(`reviews-${movieId}`, JSON.stringify(updatedSavedReviews));
-
+            safeSetItem(`reviews-${movieId}`, updatedSavedReviews);
+            
             setReviews((prev) => prev.filter((r) => r._id !== reviewId));
             setTotalReviews((prev) => prev - 1);
-
+            
             if (socket) {
                 socket.emit('reviewDeleted', reviewId, movieId);
             }
@@ -454,17 +476,7 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
             >
                 User Reviews
             </Typography>
-
-            {/* Debug information - remove this in production */}
-            {/* <Box sx={{ mb: 2, p: 2, backgroundColor: 'rgba(255,255,0,0.1)', borderRadius: 1 }}>
-                <Typography variant="body2" color="textSecondary">
-                    Login status: {currentUserId ? 'Logged in' : 'Not logged in'}
-                </Typography>
-                <Typography variant="body2" color="textSecondary">
-                    User ID: {currentUserId || 'none'}
-                </Typography>
-            </Box> */}
-
+            
             <ReviewFormContainer>
                 <form onSubmit={handleSubmit}>
                     <Typography
@@ -478,10 +490,10 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
                         {editReview ? 'Edit Your Review' : 'Write a Review'}
                     </Typography>
                     {!userId && (
-                        <Typography
-                            variant="body2"
-                            sx={{
-                                color: colors.warning,
+                        <Typography 
+                            variant="body2" 
+                            sx={{ 
+                                color: colors.warning, 
                                 mb: 2,
                                 backgroundColor: 'rgba(255, 206, 115, 0.1)',
                                 p: 1,
@@ -565,8 +577,8 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
                             {loading
                                 ? 'Submitting...'
                                 : editReview
-                                    ? 'Update Review'
-                                    : 'Submit Review'}
+                                ? 'Update Review'
+                                : 'Submit Review'}
                         </Button>
                         {editReview && (
                             <Button
@@ -654,9 +666,9 @@ const MovieReviews: React.FC<MovieReviewsProps> = ({ movieId, currentUserId }) =
                             <Avatar
                                 src={review.user.profilePicture || ''}
                                 alt={review.user.username}
-                                sx={{
-                                    width: 40,
-                                    height: 40,
+                                sx={{ 
+                                    width: 40, 
+                                    height: 40, 
                                     mr: 2,
                                     bgcolor: colors.primary,
                                     color: colors.text.primary,
